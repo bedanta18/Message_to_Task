@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/tools/agency-action-hub",
+      "destination": "https://agency-action-hub.vercel.app/tools/agency-action-hub"
+    },
+    {
+      "source": "/tools/agency-action-hub/:path*",
+      "destination": "https://agency-action-hub.vercel.app/tools/agency-action-hub/:path*"
+    }
+  ]
+}
