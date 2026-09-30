@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { approveRequirementAction, ignoreRequirementAction, type ActionState } from "@/app/actions";
+import { approveRequirementAction, ignoreRequirementAction, talkToClientRequirementAction, type ActionState } from "@/app/actions";
 import type { Priority } from "@/lib/types";
 import { HiddenTaskFields, TaskFields, TeamMemberSelects, type DirMember, type DirTeam, type TaskValues } from "./TaskFields";
 
@@ -67,7 +67,7 @@ export function RequirementCard({
     return (
       <div className="preview">
         <div className="preview-head">
-          <span className="badge tone-green">Task created</span>
+          <span className="badge tone-green">{state.message ?? "Task created"}</span>
           <h3>{v.title}</h3>
           <Link href={`/tasks/${state.id}`}>Open task →</Link>
         </div>
@@ -148,6 +148,7 @@ export function RequirementCard({
 
       <div className="preview-actions">
         <button type="submit" className="btn btn-primary" disabled={pending}>{pending ? "Creating…" : "Create Task"}</button>
+        <button type="submit" className="btn" formAction={talkToClientRequirementAction} formNoValidate disabled={pending}>Talk to Client</button>
         <button type="button" className="btn" onClick={() => setEditing(!editing)}>{editing ? "Done editing" : "Edit"}</button>
         <button type="submit" className="btn btn-ghost" formAction={ignoreRequirementAction} formNoValidate disabled={pending}>Ignore</button>
       </div>

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { AiAnalysis, AiTask } from "./ai/schema";
 import { addDaysIso, todayIso } from "./dates";
 
@@ -32,7 +34,7 @@ function t(p: Partial<AiTask> & Pick<AiTask, "title" | "description">): AiTask {
   };
 }
 
-export function buildDemoEmails(today = todayIso()): DemoEmail[] {
+function buildCuratedDemoEmails(today = todayIso()): DemoEmail[] {
   const d2 = addDaysIso(today, 2);
   const d4 = addDaysIso(today, 4);
   const d10 = addDaysIso(today, 10);
@@ -161,6 +163,84 @@ export function buildDemoEmails(today = todayIso()): DemoEmail[] {
       analysis: { classification: "NO_ACTION", confidence: 0.93, reason: "Final approval with no further changes requested.", client: "Northwind Realty", tasks: [] },
     },
   ];
+}
+
+function parseCsvRow(line: string): string[] {
+  const values: string[] = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') {
+        value += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      values.push(value);
+      value = "";
+    } else {
+      value += character;
+    }
+  }
+  values.push(value);
+  return values;
+}
+
+function demoTeam(subject: string): string {
+  const text = subject.toLowerCase();
+  if (/seo|keyword|meta|ranking|analytics|utm/.test(text)) return "SEO";
+  if (/video|thumbnail|reel|photograph|shoot|subtitles/.test(text)) return "Video";
+  if (/google ads|facebook ad|linkedin ad|paid|campaign budget|lead generation/.test(text)) return "Performance Marketing";
+  if (/blog|content|newsletter|article|copy|script/.test(text)) return "Content";
+  if (/website|landing page|webpage|homepage|form|migration/.test(text)) return "Web/Development";
+  if (/social|instagram|linkedin|facebook|influencer/.test(text)) return "Social Media";
+  if (/design|creative|brochure|logo|banner|presentation|dashboard/.test(text)) return "Design";
+  return "Marketing Strategy";
+}
+
+function buildCsvDemoEmails(): DemoEmail[] | null {
+  const file = path.join(process.cwd(), "data", "message_to_task_dummy_emails_100.csv");
+  if (!fs.existsSync(file)) return null;
+  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
+  const rows = lines.slice(1).map(parseCsvRow).filter((row) => row.length >= 3 && row[0]);
+  const now = Date.now();
+
+  return rows.map(([fromEmail, subject, body], index) => {
+    const nonAction = /\b(approved|for your reference|let's discuss)\b/i.test(body);
+    const classification = nonAction ? "NO_ACTION" : "ACTION_REQUIRED";
+    const team = demoTeam(subject);
+    const analysis: AiAnalysis = {
+      classification,
+      confidence: nonAction ? 0.94 : 0.86,
+      reason: nonAction ? "The email is an approval, reference, or discussion note without a new deliverable." : "The email contains a direct request for agency work.",
+      client: null,
+      tasks: nonAction ? [] : [t({
+        title: subject,
+        description: body,
+        deliverable: subject,
+        suggested_team: team,
+        assignment_reason: `This request appears to be ${team} work based on its subject.`,
+        confidence: 0.86,
+      })],
+    };
+    return {
+      key: `csv-${fromEmail}-${index}`,
+      from_name: fromEmail.split("@")[0] ?? "Client",
+      from_email: fromEmail,
+      to: "bedanta.product@gmail.com",
+      subject,
+      body,
+      hoursAgo: index * 3 + 1,
+      analysis,
+    };
+  });
+}
+
+export function buildDemoEmails(today = todayIso()): DemoEmail[] {
+  return buildCsvDemoEmails() ?? buildCuratedDemoEmails(today);
 }
 
 /** Extra manually-created demo tasks so the dashboard shows due-today / overdue / completed states. */

@@ -52,7 +52,7 @@ async function assertDirectory(workspaceId: string, teamId: string | null, membe
  * Human approval step: turns an AI requirement draft (possibly edited) into a task.
  * requirement_id is UNIQUE on tasks, so approving twice can never create two tasks.
  */
-export async function createTaskFromRequirement(workspaceId: string, requirementId: string, input: TaskInputT): Promise<string> {
+export async function createTaskFromRequirement(workspaceId: string, requirementId: string, input: TaskInputT, requestedStatus?: TaskStatus): Promise<string> {
   await assertDirectory(workspaceId, input.team_id, input.member_id);
   const settings = await getSettings(workspaceId);
   const result = await tx(async (d) => {
@@ -67,7 +67,7 @@ export async function createTaskFromRequirement(workspaceId: string, requirement
 
     const hadSuggestion = Boolean(req.suggested_team_id || req.suggested_member_id);
     const accepted = hadSuggestion ? req.suggested_team_id === input.team_id && req.suggested_member_id === input.member_id : null;
-    const status: TaskStatus = input.member_id && settings.default_status === "assigned" ? "assigned" : "new";
+    const status: TaskStatus = requestedStatus ?? (input.member_id && settings.default_status === "assigned" ? "assigned" : "new");
 
     const [task] = await d.query<{ id: string }>(
       `insert into tasks (workspace_id, email_id, requirement_id, title, description, deliverable, client, priority, deadline,

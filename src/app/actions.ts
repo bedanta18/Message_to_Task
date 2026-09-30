@@ -59,6 +59,12 @@ export async function approveRequirementAction(_: ActionState, fd: FormData): Pr
   }
 }
 
+export async function talkToClientRequirementAction(fd: FormData): Promise<void> {
+  const { workspace } = await requireCurrent();
+  await createTaskFromRequirement(workspace.id, String(fd.get("requirement_id")), taskFromForm(fd), "waiting_for_client");
+  refreshAll();
+}
+
 export async function ignoreRequirementAction(fd: FormData): Promise<void> {
   const { workspace } = await requireCurrent();
   await ignoreRequirement(workspace.id, String(fd.get("requirement_id")));
