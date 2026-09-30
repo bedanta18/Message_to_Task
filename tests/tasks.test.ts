@@ -5,7 +5,7 @@ import { addDaysIso, todayIso } from "@/lib/dates";
 import { one, query, tx } from "@/lib/db";
 import { insertEmailIfNew, listEmails, listRequirements } from "@/lib/repo/emails";
 import {
-  assignTask, createManualTask, createTaskFromRequirement, dashboardMetrics, getTask, ignoreEmail, ignoreRequirement, listTasks,
+  assignTask, createManualTask, createTaskFromRequirement, dashboardMetrics, getTask, ignoreEmail, ignoreRequirement, listTasks, restoreEmailForReview,
   setTaskStatus, TaskInput, updateTask,
 } from "@/lib/repo/tasks";
 import { getDirectory, upsertMember } from "@/lib/repo/teams";
@@ -88,13 +88,16 @@ describe("task lifecycle", () => {
     expect(() => TaskInput.parse({ title: "Valid", priority: "low", deadline: "2026-13-01" })).toThrow();
   });
 
-  it("ignoring drafts / emails never creates tasks", async () => {
+  it("ignoring drafts / emails can be restored for review without creating tasks", async () => {
     const { emailId, reqs } = await analysedEmail([{ title: "One" }, { title: "Two" }]);
     await ignoreRequirement(wid, reqs[0]!.id);
     expect((await one<{ status: string }>("select status from emails where id = $1", [emailId]))!.status).toBe("action_required");
     await ignoreEmail(wid, emailId);
     expect((await one<{ status: string }>("select status from emails where id = $1", [emailId]))!.status).toBe("ignored");
     expect(await query("select 1 from tasks where email_id = $1", [emailId])).toHaveLength(0);
+    await restoreEmailForReview(wid, emailId);
+    expect((await one<{ status: string }>("select status from emails where id = $1", [emailId]))!.status).toBe("needs_review");
+    expect(await query("select 1 from requirements where email_id = $1 and status = 'pending'", [emailId])).toHaveLength(2);
   });
 
   it("creates a manual task from a Needs Review email", async () => {

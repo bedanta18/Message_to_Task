@@ -210,24 +210,27 @@ function buildCsvDemoEmails(): DemoEmail[] | null {
 
   return rows.map(([fromEmail, subject, body], index) => {
     const nonAction = /\b(approved|for your reference|let's discuss)\b/i.test(body);
-    const classification = nonAction ? "NO_ACTION" : "ACTION_REQUIRED";
+    const needsReview = /\b(let's discuss|checking in|any thoughts)\b/i.test(body);
+    const classification = needsReview ? "UNCERTAIN" : nonAction ? "NO_ACTION" : "ACTION_REQUIRED";
     const team = demoTeam(subject);
+    const multiTask = index === 1;
     const analysis: AiAnalysis = {
       classification,
-      confidence: nonAction ? 0.94 : 0.86,
-      reason: nonAction ? "The email is an approval, reference, or discussion note without a new deliverable." : "The email contains a direct request for agency work.",
+      confidence: needsReview ? 0.61 : nonAction ? 0.94 : 0.86,
+      reason: needsReview ? "The email is conversational and may need a response, but the requested work is unclear." : nonAction ? "The email is an approval, reference, or discussion note without a new deliverable." : "The email contains a direct request for agency work.",
       client: null,
-      tasks: nonAction ? [] : [t({
-        title: subject,
+      tasks: nonAction && !needsReview ? [] : Array.from({ length: multiTask ? 3 : 1 }, (_, taskIndex) => t({
+        title: taskIndex === 0 ? subject : `${subject} - part ${taskIndex + 1}`,
         description: body,
         deliverable: subject,
         suggested_team: team,
+        suggested_assignee: multiTask ? "Rahul" : null,
         assignment_reason: `This request appears to be ${team} work based on its subject.`,
         confidence: 0.86,
-      })],
+      })),
     };
     return {
-      key: `csv-${fromEmail}-${index}`,
+      key: multiTask ? "demo-website-update" : `csv-${fromEmail}-${index}`,
       from_name: fromEmail.split("@")[0] ?? "Client",
       from_email: fromEmail,
       to: "bedanta.product@gmail.com",
@@ -235,6 +238,7 @@ function buildCsvDemoEmails(): DemoEmail[] | null {
       body,
       hoursAgo: index * 3 + 1,
       analysis,
+      approve: multiTask ? { status: "assigned" } : undefined,
     };
   });
 }

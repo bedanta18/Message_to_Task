@@ -6,7 +6,7 @@ import { requireCurrent } from "@/lib/current";
 import { toUserMessage } from "@/lib/errors";
 import { SettingsInput, updateSettings } from "@/lib/repo/settings";
 import {
-  assignTask, createManualTask, createTaskFromRequirement, deleteTask, ignoreEmail, ignoreRequirement, setTaskStatus, TaskInput, updateTask,
+  assignTask, createManualTask, createTaskFromRequirement, deleteTask, ignoreEmail, ignoreRequirement, restoreEmailForReview, restoreRequirementForReview, setTaskStatus, TaskInput, updateTask,
 } from "@/lib/repo/tasks";
 import { deleteMember, deleteTeam, upsertMember, upsertTeam } from "@/lib/repo/teams";
 import { AVAILABILITY, TASK_STATUSES, type Availability, type TaskStatus } from "@/lib/types";
@@ -71,12 +71,24 @@ export async function ignoreRequirementAction(fd: FormData): Promise<void> {
   refreshAll();
 }
 
+export async function restoreRequirementForReviewAction(fd: FormData): Promise<void> {
+  const { workspace } = await requireCurrent();
+  await restoreRequirementForReview(workspace.id, String(fd.get("requirement_id")));
+  refreshAll();
+}
+
 export async function ignoreEmailAction(fd: FormData): Promise<void> {
   const { workspace } = await requireCurrent();
   await ignoreEmail(workspace.id, String(fd.get("email_id")));
   refreshAll();
   const back = str(fd, "back");
   if (back) redirect(back);
+}
+
+export async function restoreEmailForReviewAction(fd: FormData): Promise<void> {
+  const { workspace } = await requireCurrent();
+  await restoreEmailForReview(workspace.id, String(fd.get("email_id")));
+  refreshAll();
 }
 
 export async function createManualTaskAction(_: ActionState, fd: FormData): Promise<ActionState> {

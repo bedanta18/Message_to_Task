@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ignoreEmailAction } from "@/app/actions";
+import { ignoreEmailAction, restoreEmailForReviewAction, restoreRequirementForReviewAction } from "@/app/actions";
 import { RequirementCard } from "@/components/RequirementCard";
 import { ReanalyzeButton } from "@/components/SyncButton";
 import { TaskForm } from "@/components/TaskForm";
@@ -28,6 +28,7 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
     query<{ id: string; title: string; status: string }>("select id, title, status from tasks where email_id = $1 and workspace_id = $2 order by created_at", [email.id, workspace.id]),
   ]);
   const pending = reqs.filter((r) => r.status === "pending");
+  const restorable = reqs.filter((r) => r.status === "ignored" && !r.task_id);
   const low = email.status === "needs_review";
   const conf = analysis?.confidence != null ? Math.round(Number(analysis.confidence) * 100) : null;
   const dir = { teams: teams.map((t) => ({ id: t.id, name: t.name })), members: members.map((m) => ({ id: m.id, name: m.name, team_id: m.team_id, availability: m.availability, active_tasks: m.active_tasks })) };
@@ -52,6 +53,12 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
               <input type="hidden" name="email_id" value={email.id} />
               <input type="hidden" name="back" value="/inbox" />
               <button className="btn btn-ghost">Ignore email</button>
+            </form>
+          )}
+          {email.status === "ignored" && (
+            <form action={restoreEmailForReviewAction}>
+              <input type="hidden" name="email_id" value={email.id} />
+              <button className="btn btn-primary">Put back in review</button>
             </form>
           )}
         </div>
@@ -122,6 +129,23 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
               heading={low ? "Suggested task — needs review" : pending.length > 1 ? `Action Required · task ${i + 1} of ${pending.length}` : "Action Required"}
             />
           ))}
+
+          {restorable.length > 0 && (
+            <section className="card">
+              <div className="card-head"><h2>Ignored suggestions</h2></div>
+              <div className="list">
+                {restorable.map((r) => (
+                  <div key={r.id} className="list-item">
+                    <span className="grow">{r.title}</span>
+                    <form action={restoreRequirementForReviewAction}>
+                      <input type="hidden" name="requirement_id" value={r.id} />
+                      <button className="btn btn-sm">Put back in review</button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {linkedTasks.length > 0 && (
             <section className="card">

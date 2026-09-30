@@ -142,12 +142,36 @@ export async function ignoreRequirement(workspaceId: string, requirementId: stri
   });
 }
 
+export async function restoreRequirementForReview(workspaceId: string, requirementId: string): Promise<void> {
+  await tx(async (d) => {
+    const [r] = await d.query<{ email_id: string }>(
+      "update requirements set status = 'pending' where id = $1 and workspace_id = $2 and status = 'ignored' returning email_id",
+      [requirementId, workspaceId],
+    );
+    if (!r) throw new AppError("not_found", "This suggestion is no longer ignored.", { status: 404 });
+    await d.query("update emails set status = 'needs_review', error = null where id = $1 and workspace_id = $2", [r.email_id, workspaceId]);
+  });
+  await track(workspaceId, "email_restored_for_review", {});
+}
+
 export async function ignoreEmail(workspaceId: string, emailId: string): Promise<void> {
   await tx(async (d) => {
     await d.query("update requirements set status = 'ignored' where email_id = $1 and workspace_id = $2 and status = 'pending'", [emailId, workspaceId]);
     await d.query("update emails set status = 'ignored' where id = $1 and workspace_id = $2 and status <> 'processed'", [emailId, workspaceId]);
   });
   await track(workspaceId, "email_ignored", {});
+}
+
+export async function restoreEmailForReview(workspaceId: string, emailId: string): Promise<void> {
+  await tx(async (d) => {
+    await d.query("update requirements set status = 'pending' where email_id = $1 and workspace_id = $2 and status = 'ignored'", [emailId, workspaceId]);
+    const restored = await d.query(
+      "update emails set status = 'needs_review', error = null where id = $1 and workspace_id = $2 and status = 'ignored' returning id",
+      [emailId, workspaceId],
+    );
+    if (!restored.length) throw new AppError("not_found", "This email is no longer ignored.", { status: 404 });
+  });
+  await track(workspaceId, "email_restored_for_review", {});
 }
 
 export async function getTask(workspaceId: string, id: string): Promise<TaskRow | null> {
