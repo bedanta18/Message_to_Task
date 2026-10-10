@@ -1,4 +1,4 @@
-import { one, query, type Db } from "../db";
+import { one, query, tx, type Db } from "../db";
 import type { EmailRow, EmailStatus, RequirementRow } from "../types";
 
 export interface NewEmail {
@@ -140,4 +140,24 @@ export async function pendingEmailIds(workspaceId: string, limit = 50): Promise<
 
 export function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
+/**
+ * "Reset": puts the workspace back to its never-synced state. Deletes synced emails and
+ * everything derived from them (AI analyses, requirements, tasks created from emails) and
+ * clears the last-sync marker. Keeps the Gmail connection, settings, teams/members and
+ * manually created tasks.
+ */
+export async function resetSyncedData(workspaceId: string): Promise<{ emails: number; tasks: number }> {
+  return tx(async (d) => {
+    // Tasks only point at emails with ON DELETE SET NULL, so remove email-derived ones explicitly first.
+    const tasks = await d.query<{ id: string }>(
+      "delete from tasks where workspace_id = $1 and (email_id is not null or requirement_id is not null) returning id",
+      [workspaceId],
+    );
+    // Analyses and requirements cascade from emails.
+    const emails = await d.query<{ id: string }>("delete from emails where workspace_id = $1 returning id", [workspaceId]);
+    await d.query("update gmail_accounts set last_sync_at = null, last_error = null where workspace_id = $1", [workspaceId]);
+    return { emails: emails.length, tasks: tasks.length };
+  });
 }

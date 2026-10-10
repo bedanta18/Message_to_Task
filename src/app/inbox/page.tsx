@@ -3,8 +3,10 @@ import { SyncButton } from "@/components/SyncButton";
 import { ClassificationBadge, Confidence, DemoBadge, EmailStatusBadge, Empty } from "@/components/ui";
 import { query } from "@/lib/db";
 import { formatDateTime } from "@/lib/dates";
+import { daysInQuery } from "@/lib/google/gmail";
 import { pageContext, param, type SearchParams } from "@/lib/page";
 import { listEmails } from "@/lib/repo/emails";
+import { getSettings } from "@/lib/repo/settings";
 import type { EmailStatus } from "@/lib/types";
 
 export const metadata = { title: "Inbox" };
@@ -26,9 +28,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Search
   const sp = await searchParams;
   const tab = (param(sp, "tab") ?? "open") as (typeof TABS)[number]["key"];
   const q = param(sp, "q") ?? "";
-  const [emails, counts] = await Promise.all([
+  const [emails, counts, settings] = await Promise.all([
     listEmails(workspace.id, { status: tab, q }),
     query<{ status: string; n: number }>("select status, count(*)::int as n from emails where workspace_id = $1 group by status", [workspace.id]),
+    getSettings(workspace.id),
   ]);
   const count = (k: string) =>
     k === "all" ? counts.reduce((a, c) => a + c.n, 0)
@@ -42,7 +45,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Search
           <h1>Inbox</h1>
           <p>Every synced email with the AI’s classification. Open one to review its suggested tasks.</p>
         </div>
-        {!isDemo && gmail?.status === "connected" && <div className="row"><SyncButton mode="analyze" className="btn" /><SyncButton /></div>}
+        {!isDemo && gmail?.status === "connected" && <div className="row"><SyncButton mode="analyze" className="btn" /><SyncButton defaultDays={daysInQuery(settings.gmail_query) ?? 7} defaultMax={settings.max_emails} /></div>}
       </div>
 
       <nav className="tabs" aria-label="Email filters">

@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireCurrent } from "@/lib/current";
+import { requireCurrent, requireOwner } from "@/lib/current";
 import { toUserMessage } from "@/lib/errors";
+import { resetSyncedData } from "@/lib/repo/emails";
+import { track } from "@/lib/repo/events";
 import { SettingsInput, updateSettings } from "@/lib/repo/settings";
 import {
   assignTask, createManualTask, createTaskFromRequirement, deleteTask, ignoreEmail, ignoreRequirement, restoreEmailForReview, restoreRequirementForReview, setTaskStatus, TaskInput, updateTask,
@@ -83,6 +85,15 @@ export async function ignoreEmailAction(fd: FormData): Promise<void> {
   refreshAll();
   const back = str(fd, "back");
   if (back) redirect(back);
+}
+
+/** Dashboard "Reset": back to the never-synced state (see resetSyncedData). */
+export async function resetSyncAction(): Promise<void> {
+  const { workspace } = await requireOwner();
+  const removed = await resetSyncedData(workspace.id);
+  await track(workspace.id, "sync_reset", removed);
+  refreshAll();
+  redirect("/?reset=1");
 }
 
 export async function restoreEmailForReviewAction(fd: FormData): Promise<void> {

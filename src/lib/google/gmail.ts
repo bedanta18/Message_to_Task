@@ -59,10 +59,59 @@ function quoteLabel(label: string): string {
   return /^[\w/-]+$/.test(slug) ? slug : `"${slug.replace(/"/g, "")}"`;
 }
 
+/** A time window in Unix seconds; `before` omitted means "until now". */
+export interface SyncRange { after: number; before?: number }
+
+/** Restricts a query to a time window, replacing any date terms already in it. */
+export function withinRange(q: string, range: SyncRange): string {
+  const base = q.replace(/(^|\s)(newer_than|older_than|after|before):\S+/gi, " ").replace(/\s+/g, " ").trim();
+  const terms = [`after:${range.after}`, ...(range.before ? [`before:${range.before}`] : [])];
+  return [base, ...terms].join(" ").trim();
+}
+
+/** Day count from a query's newer_than: (d/m/y units), used to pre-fill the sync range. */
+export function daysInQuery(q: string): number | null {
+  const m = /newer_than:(\d+)([dmy])/i.exec(q);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return m[2]!.toLowerCase() === "d" ? n : m[2]!.toLowerCase() === "m" ? n * 30 : n * 365;
+}
+
+/** Ceiling for "All emails" — keeps one sync's ID listing to 20 Gmail calls. */
+export const ALL_EMAILS_CAP = 1000;
+/** Largest number a user can type for a manual sync. */
+export const MAX_SYNC_EMAILS = ALL_EMAILS_CAP;
+
+/** Lists up to `max` message IDs (newest first), paging through Gmail 50 at a time. */
 export async function listMessageIds(accessToken: string, q: string, max: number, fetchImpl?: typeof fetch): Promise<string[]> {
-  const params = new URLSearchParams({ q, maxResults: String(Math.min(Math.max(max, 1), 50)) });
-  const data = await gmailGet<{ messages?: { id: string }[] }>(`/messages?${params}`, accessToken, fetchImpl);
-  return (data.messages ?? []).map((m) => m.id);
+  const limit = Math.min(Math.max(max, 1), ALL_EMAILS_CAP);
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ q, maxResults: String(Math.min(limit - ids.length, 50)) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await gmailGet<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${params}`, accessToken, fetchImpl);
+    ids.push(...(data.messages ?? []).map((m) => m.id));
+    pageToken = data.nextPageToken;
+  } while (pageToken && ids.length < limit);
+  return ids.slice(0, limit);
+}
+
+/**
+ * Counts messages matching a query (exact up to `cap`) by listing IDs 500 at a time.
+ * Gmail's resultSizeEstimate is too unreliable to show to users.
+ */
+export async function countMessages(accessToken: string, q: string, cap = ALL_EMAILS_CAP, fetchImpl?: typeof fetch): Promise<number> {
+  let count = 0;
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ q, maxResults: "500", fields: "messages/id,nextPageToken" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await gmailGet<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${params}`, accessToken, fetchImpl);
+    count += data.messages?.length ?? 0;
+    pageToken = data.nextPageToken;
+  } while (pageToken && count < cap);
+  return Math.min(count, cap);
 }
 
 interface GmailPart {

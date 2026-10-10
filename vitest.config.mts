@@ -10,6 +10,9 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     testTimeout: 30000,
     hookTimeout: 90000,
+    // Each test file boots its own embedded Postgres (PGlite/WASM); too many at once
+    // can exhaust memory and crash a worker, so cap parallelism.
+    maxWorkers: 2,
     env: {
       DATABASE_URL: "pglite://memory",
       TOKEN_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",

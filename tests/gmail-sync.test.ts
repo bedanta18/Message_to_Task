@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { query } from "@/lib/db";
 import { saveConnection } from "@/lib/google/account";
-import { buildQuery, gmailGet, GmailUnauthorized, htmlToText, parseMessage, stripQuoted } from "@/lib/google/gmail";
+import { resetSyncedData } from "@/lib/repo/emails";
+import { buildQuery, countMessages, daysInQuery, gmailGet, GmailUnauthorized, htmlToText, listMessageIds, parseMessage, stripQuoted, withinRange } from "@/lib/google/gmail";
 import { GMAIL_SCOPE } from "@/lib/google/oauth";
 import { syncGmail } from "@/lib/sync";
 import { aiResponse, aiTask, gmailMessage, json, mockFetch, ownerWorkspace } from "./helpers";
@@ -44,6 +45,44 @@ describe("Gmail query builder", () => {
     expect(buildQuery({ ...base, sync_mode: "label" })).toBe("label:AI-Task-Inbox");
     expect(buildQuery({ ...base, sync_mode: "both" })).toBe("label:AI-Task-Inbox newer_than:30d");
     expect(buildQuery({ gmail_query: "", label_filter: "Client Work", sync_mode: "label" })).toBe("label:Client-Work");
+  });
+});
+
+describe("Sync range overrides", () => {
+  it("replaces date terms with the chosen time window", () => {
+    expect(withinRange("in:inbox newer_than:7d -from:me", { after: 1700000000 })).toBe("in:inbox -from:me after:1700000000");
+    expect(withinRange("label:AI-Task-Inbox after:2024/01/01 before:2024/02/01", { after: 1700000000, before: 1700086400 }))
+      .toBe("label:AI-Task-Inbox after:1700000000 before:1700086400");
+    expect(withinRange("", { after: 1 })).toBe("after:1");
+  });
+  it("reads the day range from a saved query", () => {
+    expect(daysInQuery("in:inbox newer_than:14d")).toBe(14);
+    expect(daysInQuery("newer_than:2m")).toBe(60);
+    expect(daysInQuery("in:inbox")).toBeNull();
+  });
+  it("pages through Gmail up to the requested count", async () => {
+    const pages: Record<string, { messages: { id: string }[]; nextPageToken?: string }> = {
+      "": { messages: Array.from({ length: 50 }, (_, i) => ({ id: `a${i}` })), nextPageToken: "p2" },
+      p2: { messages: Array.from({ length: 50 }, (_, i) => ({ id: `b${i}` })), nextPageToken: "p3" },
+    };
+    const seen: string[] = [];
+    const fetchImpl = (async (input: string | URL) => {
+      const u = new URL(String(input));
+      seen.push(u.searchParams.get("maxResults")!);
+      return new Response(JSON.stringify(pages[u.searchParams.get("pageToken") ?? ""]), { status: 200 });
+    }) as typeof fetch;
+    const ids = await listMessageIds("tok", "newer_than:7d", 75, fetchImpl);
+    expect(ids).toHaveLength(75);
+    expect(seen).toEqual(["50", "25"]);
+  });
+  it("counts emails in range exactly, ignoring Gmail's estimate", async () => {
+    const pages: Record<string, { messages: { id: string }[]; nextPageToken?: string; resultSizeEstimate: number }> = {
+      "": { messages: Array.from({ length: 500 }, (_, i) => ({ id: `a${i}` })), nextPageToken: "p2", resultSizeEstimate: 3 },
+      p2: { messages: Array.from({ length: 120 }, (_, i) => ({ id: `b${i}` })), resultSizeEstimate: 3 },
+    };
+    const fetchImpl = (async (input: string | URL) =>
+      new Response(JSON.stringify(pages[new URL(String(input)).searchParams.get("pageToken") ?? ""]), { status: 200 })) as typeof fetch;
+    expect(await countMessages("tok", "after:1", 1000, fetchImpl)).toBe(620);
   });
 });
 
@@ -136,6 +175,27 @@ describe("syncGmail end-to-end (mocked Google + AI)", () => {
     expect(calls.filter((c) => c.url.includes("oauth2")).length).toBe(1);
     const auth = (calls.at(-1)!.init?.headers as Record<string, string>).Authorization;
     expect(auth).toBe("Bearer refreshed");
+  });
+
+  it("reset removes synced data but keeps manual tasks and the Gmail connection", async () => {
+    const [req] = await query<{ id: string; email_id: string }>("select id, email_id from requirements where workspace_id = $1 limit 1", [wid]);
+    await query("insert into tasks (workspace_id, email_id, requirement_id, title) values ($1, $2, $3, 'From email')", [wid, req!.email_id, req!.id]);
+    await query("insert into tasks (workspace_id, title) values ($1, 'Manual task')", [wid]);
+    await query("update gmail_accounts set last_sync_at = now() where workspace_id = $1", [wid]);
+
+    const removed = await resetSyncedData(wid);
+    expect(removed).toEqual({ emails: 3, tasks: 1 });
+    const count = async (table: string) => ((await query<{ n: number }>(`select count(*)::int as n from ${table} where workspace_id = $1`, [wid]))[0]!.n);
+    expect(await count("emails")).toBe(0);
+    expect(await count("ai_analyses")).toBe(0);
+    expect(await count("requirements")).toBe(0);
+    expect(await query<{ title: string }>("select title from tasks where workspace_id = $1", [wid])).toEqual([{ title: "Manual task" }]);
+    const [acct] = await query<{ status: string; last_sync_at: string | null }>("select status, last_sync_at from gmail_accounts where workspace_id = $1", [wid]);
+    expect(acct).toEqual({ status: "connected", last_sync_at: null });
+
+    // A fresh sync after reset re-imports the same emails.
+    mockFetch(routes(["a1", "a2", "a3"]));
+    await expect(syncGmail(wid)).resolves.toMatchObject({ found: 3, new: 3, duplicates: 0 });
   });
 
   it("reports rate limiting in plain language", async () => {

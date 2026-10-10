@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { ignoreEmailAction } from "./actions";
+import { ignoreEmailAction, resetSyncAction } from "./actions";
+import { ConfirmButton } from "@/components/AutoSubmit";
 import { SyncButton } from "@/components/SyncButton";
 import { ConnectGmailButton, Confidence, DemoBadge, DueBadge, Empty, PriorityBadge, TaskStatusBadge } from "@/components/ui";
 import { getCurrent } from "@/lib/current";
 import { formatDateTime } from "@/lib/dates";
 import { env } from "@/lib/env";
+import { daysInQuery } from "@/lib/google/gmail";
 import { BASE_PATH } from "@/lib/base-path";
 import { param, type SearchParams } from "@/lib/page";
 import { listEmails } from "@/lib/repo/emails";
@@ -40,6 +42,7 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
 
   return (
     <>
+      {param(sp, "reset") && <div className="alert alert-success" style={{ marginBottom: 16 }}>Dashboard reset. Synced emails and the tasks created from them were removed — click “Sync Emails” to start fresh.</div>}
       {param(sp, "connected") && <div className="alert alert-success" style={{ marginBottom: 16 }}>Gmail connected with read-only access. Click “Sync Emails” to fetch recent client emails.</div>}
       {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{ERRORS[error] ?? ERRORS.oauth_failed}</div>}
 
@@ -55,8 +58,18 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
           </p>
         </div>
         <div className="row">
+          {!current.isDemo && (m.emails_synced > 0 || current.gmail?.last_sync_at) && (
+            <form action={resetSyncAction}>
+              <ConfirmButton
+                type="submit" className="btn btn-danger"
+                message="Reset the dashboard? This deletes all synced emails, their AI analyses and requirements, and every task created from an email. Your Gmail connection, settings, teams and manually created tasks are kept. This can't be undone."
+              >
+                Reset
+              </ConfirmButton>
+            </form>
+          )}
           {!current.isDemo && connected && m.emails_synced > 0 && <SyncButton mode="analyze" className="btn" />}
-          {!current.isDemo && (connected ? <SyncButton /> : <ConnectGmailButton label={current.gmail ? "Reconnect Gmail" : "Connect Gmail"} />)}
+          {!current.isDemo && (connected ? <SyncButton defaultDays={daysInQuery(settings.gmail_query) ?? 7} defaultMax={settings.max_emails} /> : <ConnectGmailButton label={current.gmail ? "Reconnect Gmail" : "Connect Gmail"} />)}
           {current.isDemo && <Link className="btn btn-primary" href="/inbox">Review inbox</Link>}
         </div>
       </div>

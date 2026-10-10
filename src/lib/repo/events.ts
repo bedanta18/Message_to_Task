@@ -16,7 +16,8 @@ export type EventName =
   | "ai_recommendation_rejected"
   | "task_completed"
   | "email_ignored"
-  | "email_restored_for_review";
+  | "email_restored_for_review"
+  | "sync_reset";
 
 type Props = Record<string, string | number | boolean | null>;
 

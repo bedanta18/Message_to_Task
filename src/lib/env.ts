@@ -36,6 +36,16 @@ export const env = {
     return read("AI_RESPONSE_FORMAT") === "json_object" ? "json_object" : "json_schema";
   },
   get aiConfigured() { return Boolean(read("OPENAI_API_KEY")); },
+  /** Emails analysed in parallel. Use 1 on free tiers with low tokens-per-minute limits (e.g. Groq). */
+  get aiConcurrency() {
+    const n = Number(read("AI_CONCURRENCY") ?? 3);
+    return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 3;
+  },
+  /** Optional `reasoning_effort` for reasoning models (e.g. Groq's openai/gpt-oss-*). Unset = not sent. */
+  get aiReasoningEffort(): "low" | "medium" | "high" | undefined {
+    const v = read("AI_REASONING_EFFORT");
+    return v === "low" || v === "medium" || v === "high" ? v : undefined;
+  },
   get allowedEmails(): string[] {
     return (read("ALLOWED_EMAILS") ?? "bedanta.product@gmail.com")
       .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);

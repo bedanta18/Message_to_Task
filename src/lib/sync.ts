@@ -3,7 +3,7 @@ import { tx } from "./db";
 import { env } from "./env";
 import { AiErrors, AppError, toUserMessage } from "./errors";
 import { getValidAccessToken } from "./google/account";
-import { buildQuery, getMessage, GmailUnauthorized, listMessageIds, parseMessage } from "./google/gmail";
+import { ALL_EMAILS_CAP, buildQuery, countMessages, getMessage, GmailUnauthorized, listMessageIds, parseMessage, withinRange, type SyncRange } from "./google/gmail";
 import { query } from "./db";
 import { existingExternalIds, insertEmailIfNew, pendingEmailIds } from "./repo/emails";
 import { track } from "./repo/events";
@@ -15,6 +15,8 @@ export interface SyncResult {
   new: number;
   duplicates: number;
   skipped: number;
+  /** New messages left for the next sync because the time budget ran out. */
+  notFetched: number;
   analyzed: number;
   actionRequired: number;
   needsReview: number;
@@ -62,18 +64,25 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
  * Sync = fetch recent Gmail messages (read-only) → store new ones (dedupe by Gmail
  * message ID) → AI-analyse within a time budget. Anything not analysed in time
  * stays "pending" and is picked up by the next sync or "Analyse pending".
+ * `range` / `maxEmails` override the saved settings for a one-off manual sync;
+ * `maxEmails: "all"` takes everything in range (up to ALL_EMAILS_CAP), fetching
+ * what fits in the budget — the rest is picked up by the next sync.
  */
-export async function syncGmail(workspaceId: string, opts: { budgetMs?: number } = {}): Promise<SyncResult> {
+export async function syncGmail(
+  workspaceId: string,
+  opts: { budgetMs?: number; range?: SyncRange; maxEmails?: number | "all" } = {},
+): Promise<SyncResult> {
   const started = Date.now();
   const budget = opts.budgetMs ?? 45_000;
   const settings = await getSettings(workspaceId);
-  const q = buildQuery(settings);
+  const q = opts.range ? withinRange(buildQuery(settings), opts.range) : buildQuery(settings);
+  const max = opts.maxEmails === "all" ? ALL_EMAILS_CAP : (opts.maxEmails ?? settings.max_emails);
   const result: SyncResult = {
-    query: q, found: 0, new: 0, duplicates: 0, skipped: 0, analyzed: 0, actionRequired: 0, needsReview: 0, noAction: 0, failed: 0, remaining: 0, errors: [],
+    query: q, found: 0, new: 0, duplicates: 0, skipped: 0, notFetched: 0, analyzed: 0, actionRequired: 0, needsReview: 0, noAction: 0, failed: 0, remaining: 0, errors: [],
   };
 
   try {
-    const ids = await withToken(workspaceId, (t) => listMessageIds(t, q, settings.max_emails));
+    const ids = await withToken(workspaceId, (t) => listMessageIds(t, q, max));
     result.found = ids.length;
     const known = await existingExternalIds(workspaceId, "gmail", ids);
     result.duplicates = known.size;
@@ -83,6 +92,11 @@ export async function syncGmail(workspaceId: string, opts: { budgetMs?: number }
     const self = account[0]?.email?.toLowerCase();
 
     await mapLimit(fresh, 5, async (id) => {
+      // Leave time to store what we have and analyse a few; the next sync resumes (dedupe skips stored mail).
+      if (Date.now() - started > budget - 15_000) {
+        result.notFetched++;
+        return;
+      }
       try {
         const msg = await withToken(workspaceId, (t) => getMessage(t, id));
         const parsed = parseMessage(msg);
@@ -124,7 +138,7 @@ export async function analyzePending(workspaceId: string, opts: { budgetMs?: num
     return out;
   }
 
-  const results: (AnalyzeResult | null)[] = await mapLimit(ids, 3, async (id) => {
+  const results: (AnalyzeResult | null)[] = await mapLimit(ids, env.aiConcurrency, async (id) => {
     // Leave ~8s headroom for one in-flight AI call before the serverless timeout.
     if (Date.now() - started > budget - 8_000) return null;
     return analyzeEmail(workspaceId, id).catch((e) => ({ emailId: id, status: "error" as const, error: toUserMessage(e) }));
@@ -143,4 +157,11 @@ export async function analyzePending(workspaceId: string, opts: { budgetMs?: num
     }
   }
   return out;
+}
+
+/** Number of Gmail messages a sync over `range` would match (capped at ALL_EMAILS_CAP). */
+export async function estimateSyncCount(workspaceId: string, range?: SyncRange): Promise<number> {
+  const settings = await getSettings(workspaceId);
+  const q = range ? withinRange(buildQuery(settings), range) : buildQuery(settings);
+  return withToken(workspaceId, (t) => countMessages(t, q));
 }
