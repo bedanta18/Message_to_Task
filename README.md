@@ -181,7 +181,7 @@ npm run build
 Short version (full guide in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)):
 
 1. **Supabase**: create a project in `ap-south-1` (Mumbai) and copy the **Transaction pooler** connection string into `DATABASE_URL`. Migrations run automatically on first request, or run `npm run db:migrate`.
-2. **Vercel**: import this repo as a *new* project named `agency-action-hub`, set all env vars with production values, and deploy. `vercel.json` pins region `bom1` and schedules the daily sync cron.
+2. **Vercel**: import this repo as a *new* project named `agency-action-hub`, set all env vars with production values, and deploy. `vercel.json` pins the functions to `syd1` (Sydney, next to the Supabase database; keep them in the same region) and schedules the daily sync cron.
 3. **Astro site**: add the two rewrites from [`docs/astro-site-vercel.json.example`](docs/astro-site-vercel.json.example) to the Astro repo's `vercel.json` and redeploy. The tool is then live at `https://www.aipmbedanta.com/tools/agency-action-hub`.
 4. **Google Cloud**: add `https://www.aipmbedanta.com/tools/agency-action-hub/api/auth/google/callback` as an authorized redirect URI.
 5. Optionally, link to the tool from the Astro site, e.g. on `/resources/`.

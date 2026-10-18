@@ -11,3 +11,7 @@ next-env.d.ts
 !.env.example
 npm-debug.log*
 .DS_Store
+
+# Google OAuth client downloads contain the client secret — never commit
+client_secret*.json
+*.apps.googleusercontent.com.json

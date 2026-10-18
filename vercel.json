@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "regions": ["bom1"],
+  "regions": ["syd1"],
   "crons": [
     { "path": "/tools/agency-action-hub/api/cron/sync", "schedule": "30 2 * * *" }
   ]

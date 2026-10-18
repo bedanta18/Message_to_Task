@@ -4,7 +4,7 @@
 Browser ──► www.aipmbedanta.com/tools/agency-action-hub/*       (Astro project on Vercel)
                     │  vercel.json rewrite (server-side proxy, same domain, cookies pass through)
                     ▼
-            agency-action-hub.vercel.app/tools/agency-action-hub/*   (this Next.js project on Vercel, bom1)
+            agency-action-hub.vercel.app/tools/agency-action-hub/*   (this Next.js project on Vercel, syd1)
                     │
                     ├── Supabase Postgres (ap-south-1)
                     ├── Gmail API (read-only)
@@ -13,7 +13,7 @@ Browser ──► www.aipmbedanta.com/tools/agency-action-hub/*       (Astro pro
 
 ## 1. Database (Supabase)
 
-1. Create a project at https://supabase.com. Choose region **South Asia (Mumbai) ap-south-1** so it sits next to Vercel `bom1`.
+1. Create a project at https://supabase.com. The Vercel functions must run in the **same region** as the database: every page makes many sequential queries, and a cross-region hop (e.g. Mumbai ↔ Sydney ≈ 375 ms per query) makes pages take seconds. This deployment uses Supabase **ap-southeast-2 (Sydney)** with Vercel `syd1`; if you create the database elsewhere, change `regions` in `vercel.json` to match (e.g. `ap-south-1` ↔ `bom1`).
 2. Go to **Project Settings → Database → Connection string → Transaction pooler** (port `6543`) and copy the URI, which looks like:
    `postgresql://postgres.<ref>:<password>@aws-0-ap-south-1.pooler.supabase.com:6543/postgres`
 3. Apply the schema. Pick one:
@@ -46,7 +46,7 @@ Any Postgres 14+ (Neon, RDS, and so on) works the same way.
    ```
 
    `NEXT_PUBLIC_APP_URL` and `GOOGLE_REDIRECT_URI` use the **public site domain**, not `*.vercel.app`. The OAuth callback and cookies must live on `www.aipmbedanta.com`.
-4. Click **Deploy**. `vercel.json` pins the functions to `bom1` and registers a daily cron (`/api/cron/sync`, 08:00 IST). Vercel sends `Authorization: Bearer $CRON_SECRET` automatically, and the cron only syncs workspaces whose *Sync frequency* is not *Manual*. On the Pro plan you can change the schedule to hourly.
+4. Click **Deploy**. `vercel.json` pins the functions to `syd1` (same region as the database) and registers a daily cron (`/api/cron/sync`, 08:00 IST). Vercel sends `Authorization: Bearer $CRON_SECRET` automatically, and the cron only syncs workspaces whose *Sync frequency* is not *Manual*. On the Pro plan you can change the schedule to hourly.
 5. Check that `https://agency-action-hub.vercel.app/tools/agency-action-hub` loads the welcome page. Keep **Deployment Protection** at the default ("Standard"): it protects preview URLs only, and the production URL must stay reachable by the website's rewrite.
 
 ## 3. Website integration (Astro project)
