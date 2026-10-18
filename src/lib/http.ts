@@ -4,7 +4,11 @@ import { AppError, toUserMessage } from "./errors";
 
 /** Absolute URL inside the app (works behind the aipmbedanta.com rewrite). */
 export function appUrl(path = "/"): URL {
-  return new URL(`${env.appUrl}${path.startsWith("/") ? path : `/${path}`}`);
+  const p = path.startsWith("/") ? path : `/${path}`;
+  // The app's root has no trailing slash ("…/agency-action-hub", not "…/agency-action-hub/"):
+  // the website's rewrite only matches the slash-less form, and Next.js serves the basePath without it.
+  const rest = p === "/" ? "" : p.startsWith("/?") || p.startsWith("/#") ? p.slice(1) : p;
+  return new URL(`${env.appUrl}${rest}`);
 }
 
 export function redirectTo(path: string, status = 303): NextResponse {

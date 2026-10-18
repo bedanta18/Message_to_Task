@@ -87,7 +87,7 @@ describe("OAuth callback", () => {
       "https://gmail.googleapis.com/gmail/v1/users/me/profile": () => json({ emailAddress: "Bedanta.Product@gmail.com" }),
     });
     const res = await callback(callbackRequest({ code: "auth-code", state: "s" }, oauthCookie("s")));
-    expect(res.headers.get("location")).toBe("http://localhost:3000/tools/agency-action-hub/?connected=1");
+    expect(res.headers.get("location")).toBe("http://localhost:3000/tools/agency-action-hub?connected=1");
     expect(res.cookies.get(SESSION_COOKIE)?.value).toBeTruthy();
     expect(res.cookies.get(SESSION_COOKIE)?.httpOnly).toBe(true);
 
